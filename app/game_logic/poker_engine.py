@@ -190,6 +190,17 @@ class PokerEngine:
         if self.phase != GamePhase.PREFLOP:
             raise ValueError("Can only deal flop after preflop")
         
+        # Check if only one player remains (auto-win)
+        remaining_player = self.betting_manager.get_remaining_active_player()
+        if remaining_player:
+            self.phase = GamePhase.COMPLETE
+            return {
+                "phase": self.phase.value,
+                "auto_win": True,
+                "winner": remaining_player,
+                "message": f"Player {self.players[remaining_player].name} wins automatically"
+            }
+        
         self.community_cards.extend(self.deck_manager.deal_flop())
         self.phase = GamePhase.FLOP
         self.betting_manager.start_new_betting_round(BettingRound.FLOP)
@@ -217,6 +228,17 @@ class PokerEngine:
         """Deal the turn (1 community card)"""
         if self.phase != GamePhase.FLOP:
             raise ValueError("Can only deal turn after flop")
+        
+        # Check if only one player remains (auto-win)
+        remaining_player = self.betting_manager.get_remaining_active_player()
+        if remaining_player:
+            self.phase = GamePhase.COMPLETE
+            return {
+                "phase": self.phase.value,
+                "auto_win": True,
+                "winner": remaining_player,
+                "message": f"Player {self.players[remaining_player].name} wins automatically"
+            }
         
         turn_card = self.deck_manager.deal_turn()
         if turn_card:
@@ -246,8 +268,19 @@ class PokerEngine:
     
     def deal_river(self):
         """Deal the river (1 community card)"""
-        if self.phase != GamePhase.RIVER:
+        if self.phase != GamePhase.TURN:
             raise ValueError("Can only deal river after turn")
+        
+        # Check if only one player remains (auto-win)
+        remaining_player = self.betting_manager.get_remaining_active_player()
+        if remaining_player:
+            self.phase = GamePhase.COMPLETE
+            return {
+                "phase": self.phase.value,
+                "auto_win": True,
+                "winner": remaining_player,
+                "message": f"Player {self.players[remaining_player].name} wins automatically"
+            }
         
         river_card = self.deck_manager.deal_river()
         if river_card:
@@ -284,37 +317,45 @@ class PokerEngine:
             action: "fold", "check", "call", "raise"
             amount: Amount for raise (total amount to raise TO)
         """
-        # Validate it's player's turn
-        player_ids = list(self.players.keys())
-        if player_ids[self.current_player_index] != player_id:
-            raise ValueError(f"Not {player_id}'s turn")
+        # Validate player exists
+        if player_id not in self.players:
+            raise ValueError(f"Player {player_id} not found")
         
         player = self.players[player_id]
         
         if not player.is_active:
             raise ValueError(f"Player {player_id} has folded")
         
+        # Validate it's player's turn
+        player_ids = list(self.players.keys())
+        current_player_id = player_ids[self.current_player_index]
+        if current_player_id != player_id:
+            raise ValueError(f"Not {player_id}'s turn. Current player: {current_player_id}")
+        
         # Execute action
         result = None
         action = action.lower()
         
-        if action == "fold":
-            result = self.betting_manager.fold(player_id)
-            player.is_active = False
-        
-        elif action == "check":
-            result = self.betting_manager.check(player_id)
-        
-        elif action == "call":
-            result = self.betting_manager.call(player_id)
-            player.chips = self.betting_manager.players[player_id].chips
-        
-        elif action == "raise":
-            result = self.betting_manager.bet_raise(player_id, amount)
-            player.chips = self.betting_manager.players[player_id].chips
-        
-        else:
-            raise ValueError(f"Unknown action: {action}")
+        try:
+            if action == "fold":
+                result = self.betting_manager.fold(player_id)
+                player.is_active = False
+            
+            elif action == "check":
+                result = self.betting_manager.check(player_id)
+            
+            elif action == "call":
+                result = self.betting_manager.call(player_id)
+                player.chips = self.betting_manager.players[player_id].chips
+            
+            elif action == "raise":
+                result = self.betting_manager.bet_raise(player_id, amount)
+                player.chips = self.betting_manager.players[player_id].chips
+            
+            else:
+                raise ValueError(f"Unknown action: {action}")
+        except Exception as e:
+            raise ValueError(f"Action failed: {str(e)}")
         
         # Move to next player
         self._advance_to_next_player()
@@ -322,7 +363,15 @@ class PokerEngine:
         # Check if betting round is complete
         if self.betting_manager.is_betting_round_complete():
             result["betting_round_complete"] = True
-            result["next_phase"] = self._get_next_phase()
+            
+            # Check if only one player remains (auto-win)
+            remaining_player = self.betting_manager.get_remaining_active_player()
+            if remaining_player:
+                result["auto_win"] = True
+                result["winner"] = remaining_player
+                result["next_phase"] = GamePhase.COMPLETE.value
+            else:
+                result["next_phase"] = self._get_next_phase()
         else:
             result["betting_round_complete"] = False
             result["next_player"] = player_ids[self.current_player_index]
@@ -403,6 +452,28 @@ class PokerEngine:
                 }
         
         return results
+    
+    def handle_auto_win(self, winner_id: str) -> Dict:
+        """Handle automatic win when only one player remains"""
+        self.phase = GamePhase.COMPLETE
+        
+        # Get total pot amount
+        total_pot = self.betting_manager.get_total_pot()
+        
+        # Winner gets all chips
+        self.players[winner_id].chips += total_pot
+        
+        # Store winner info
+        self.winners = [(winner_id, 0, "Auto-win (all others folded)")]
+        
+        return {
+            "phase": self.phase.value,
+            "auto_win": True,
+            "winner": winner_id,
+            "winner_name": self.players[winner_id].name,
+            "winnings": total_pot,
+            "message": f"{self.players[winner_id].name} wins automatically - all other players folded"
+        }
     
     def showdown(self) -> Dict:
         """Evaluate hands and determine winner(s)"""

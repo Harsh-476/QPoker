@@ -332,6 +332,7 @@ class BettingManager:
         active_players = [p for p in self.players.values() 
                          if not p.has_folded and not p.is_all_in]
         
+        # If only one player remains, round is complete
         if len(active_players) <= 1:
             return True
         
@@ -343,6 +344,15 @@ class BettingManager:
                 return False
         
         return True
+    
+    def get_remaining_active_player(self) -> Optional[str]:
+        """Get the single remaining active player if only one remains"""
+        active_players = [p for p in self.players.values() 
+                         if not p.has_folded and not p.is_all_in]
+        
+        if len(active_players) == 1:
+            return active_players[0].player_id
+        return None
     
     def start_new_betting_round(self, round_name: BettingRound):
         """Start a new betting round"""

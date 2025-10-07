@@ -1,15 +1,22 @@
 """
-Quantum Gates Implementation for Quantum Poker using Qiskit
-Implements X, Z, CNOT gates with actual quantum circuits
+Quantum Gates Implementation for Quantum Poker with optional Qiskit support.
+Falls back to a classical simulation if Qiskit is not installed.
 """
 
 import random
 from typing import List, Tuple, Optional
 from copy import deepcopy
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
-from qiskit_aer import AerSimulator
-from qiskit.quantum_info import Statevector
-import numpy as np
+
+try:
+    from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister  # type: ignore
+    from qiskit_aer import AerSimulator  # type: ignore
+    from qiskit.quantum_info import Statevector  # type: ignore
+    import numpy as np  # type: ignore
+    _HAS_QISKIT = True
+except Exception:
+    QuantumCircuit = QuantumRegister = ClassicalRegister = AerSimulator = Statevector = None  # type: ignore
+    np = None  # type: ignore
+    _HAS_QISKIT = False
 
 from app.game_logic.card_encoder import QuantumCard, CardEncoder
 
@@ -25,8 +32,8 @@ class QuantumGates:
             use_simulator: If True, use Qiskit Aer simulator for gate operations
         """
         self.encoder = CardEncoder()
-        self.use_simulator = use_simulator
-        self.simulator = AerSimulator() if use_simulator else None
+        self.use_simulator = use_simulator and _HAS_QISKIT
+        self.simulator = AerSimulator() if self.use_simulator else None
     
     def _create_quantum_circuit(self, card: QuantumCard) -> QuantumCircuit:
         """
@@ -38,6 +45,8 @@ class QuantumGates:
         Returns:
             QuantumCircuit initialized with card's state
         """
+        if not self.use_simulator or not _HAS_QISKIT:
+            raise RuntimeError("Qiskit simulator not available")
         qr = QuantumRegister(5, 'q')
         cr = ClassicalRegister(5, 'c')
         qc = QuantumCircuit(qr, cr)
@@ -64,6 +73,9 @@ class QuantumGates:
         Returns:
             QuantumCard with new state
         """
+        if not self.use_simulator or not _HAS_QISKIT:
+            # Classical fallback: return card as-is
+            return QuantumCard(qc, original_amplitude)  # type: ignore[arg-type]
         # Measure all qubits
         qc.measure(range(5), range(5))
         
@@ -84,21 +96,51 @@ class QuantumGates:
         
         return QuantumCard(qubits, amplitude)
     
-    def apply_x_gate(self, card: QuantumCard, preview_only: bool = False) -> Tuple[QuantumCard, int]:
+    def _test_x_gate_qubit(self, card: QuantumCard, qubit_index: int) -> Tuple[QuantumCard, bool]:
+        """Test if applying X gate to a specific qubit results in a valid card"""
+        if self.use_simulator and _HAS_QISKIT:
+            qc = self._create_quantum_circuit(card)
+            qc.x(qubit_index)
+            result_card = self._circuit_to_card(qc, card.amplitude)
+        else:
+            new_qubits = card.qubits.copy()
+            new_qubits[qubit_index] = 1 - new_qubits[qubit_index]
+            result_card = QuantumCard(new_qubits, card.amplitude)
+        
+        is_valid = self.encoder.decode_card(result_card) is not None
+        return result_card, is_valid
+
+    def apply_x_gate(self, card: QuantumCard, preview_only: bool = False, qubit_index: Optional[int] = None) -> Tuple[QuantumCard, int]:
         """
-        Apply X (bit flip) gate to a random qubit position using Qiskit
+        Apply X (bit flip) gate to a qubit position using Qiskit
         
         Args:
             card: The quantum card to apply gate to
             preview_only: If True, return preview without modifying original
+            qubit_index: Specific qubit to flip (0-4). If None, randomly select from valid qubits
         
         Returns:
             Tuple of (resulting_card, flipped_qubit_index)
         """
-        # Randomly select which qubit to flip (0-4)
-        qubit_index = random.randint(0, 4)
+        # Find valid qubits that result in valid cards
+        valid_qubits = []
+        for q_idx in range(5):
+            _, is_valid = self._test_x_gate_qubit(card, q_idx)
+            if is_valid:
+                valid_qubits.append(q_idx)
         
-        if self.use_simulator:
+        if not valid_qubits:
+            # If no valid qubits, return original card
+            return card, -1
+        
+        # Select qubit to flip (deterministic - always use first valid qubit)
+        if qubit_index is None:
+            qubit_index = valid_qubits[0]  # Always use first valid qubit for consistency
+        elif qubit_index not in valid_qubits:
+            # If specified qubit is invalid, use first valid qubit
+            qubit_index = valid_qubits[0]
+        
+        if self.use_simulator and _HAS_QISKIT:
             # Create quantum circuit
             qc = self._create_quantum_circuit(card)
             
@@ -144,7 +186,7 @@ class QuantumGates:
         Returns:
             The resulting quantum card
         """
-        if self.use_simulator:
+        if self.use_simulator and _HAS_QISKIT:
             # Create quantum circuit
             qc = self._create_quantum_circuit(card)
             
@@ -189,7 +231,7 @@ class QuantumGates:
         # Randomly select which qubit position to use
         qubit_index = random.randint(0, 4)
         
-        if self.use_simulator:
+        if self.use_simulator and _HAS_QISKIT:
             # Create combined quantum circuit (10 qubits total)
             qr = QuantumRegister(10, 'q')
             cr = ClassicalRegister(10, 'c')
@@ -279,7 +321,7 @@ class QuantumGates:
         Returns:
             Dictionary with superposition info
         """
-        if not self.use_simulator:
+        if not self.use_simulator or not _HAS_QISKIT:
             return {"error": "Superposition requires quantum simulator"}
         
         # Create circuit
@@ -338,8 +380,8 @@ class QuantumGates:
             if len(cards) != 1:
                 raise ValueError("X gate requires exactly 1 card")
             
-            result_card, qubit_idx = self.apply_x_gate(cards[0], preview_only=True)
-            
+            # Apply X gate deterministically (same as actual application)
+            result_card, qubit_flipped = self.apply_x_gate(cards[0], preview_only=True)
             original_str = self.encoder.card_to_string(cards[0])
             result_str = self.encoder.card_to_string(result_card)
             
@@ -347,7 +389,7 @@ class QuantumGates:
                 "gate": "X",
                 "original_card": original_str,
                 "result_card": result_str,
-                "qubit_flipped": qubit_idx,
+                "qubit_flipped": qubit_flipped,
                 "original_state": cards[0].__repr__(),
                 "result_state": result_card.__repr__(),
                 "is_undefined": self.encoder.decode_card(result_card) is None,
@@ -440,11 +482,13 @@ class QuantumGates:
             if len(cards) != 1:
                 raise ValueError("X gate requires exactly 1 card")
             
+            original_str = self.encoder.card_to_string(cards[0])
             result_card, qubit_idx = self.apply_x_gate(cards[0], preview_only=False)
             result_str = self.encoder.card_to_string(result_card)
             
             return {
                 "gate": "X",
+                "original_card": original_str,
                 "result_card": result_str,
                 "qubit_flipped": qubit_idx,
                 "new_state": result_card.__repr__(),
@@ -456,11 +500,13 @@ class QuantumGates:
             if len(cards) != 1:
                 raise ValueError("Z gate requires exactly 1 card")
             
+            original_str = self.encoder.card_to_string(cards[0])
             result_card = self.apply_z_gate(cards[0], preview_only=False)
             result_str = self.encoder.card_to_string(result_card)
             
             return {
                 "gate": "Z",
+                "original_card": original_str,
                 "result_card": result_str,
                 "new_state": result_card.__repr__(),
                 "is_undefined": self.encoder.decode_card(result_card) is None,
