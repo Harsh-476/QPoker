@@ -8,8 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import socketio
 
 from app.config import settings
+from app.db import Base, engine
 from app.managers.lobby_manager import LobbyManager
 from app.sockets.handlers import register_socket_handlers
+from app.api.auth_routes import router as auth_router
 
 
 async def periodic_cleanup(lobby_manager: LobbyManager):
@@ -57,11 +59,14 @@ def create_app() -> FastAPI:
     # Include API routers
     from app.api.routes import router as api_router
     app.include_router(api_router, prefix="/api")
+    app.include_router(auth_router, prefix="/api")
     
     # Add startup event for periodic cleanup
     @app.on_event("startup")
     async def startup_event():
         """Start background cleanup task"""
+        # Ensure DB tables exist
+        Base.metadata.create_all(bind=engine)
         asyncio.create_task(periodic_cleanup(app.state.lobby_manager))
 
     # Build Socket.IO ASGI that forwards non-socket paths to FastAPI

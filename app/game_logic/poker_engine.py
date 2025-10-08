@@ -184,6 +184,24 @@ class PokerEngine:
             "blinds_posted": blind_result,
             "phase": self.phase.value
         }
+
+    def is_game_over(self) -> bool:
+        """Return True if only one player has chips left."""
+        players_with_chips = [p for p in self.players.values() if p.chips > 0]
+        return len(players_with_chips) <= 1
+
+    def start_next_hand_if_possible(self) -> Optional[Dict]:
+        """If the game is not over, rotate dealer and start the next hand.
+        Returns next hand info dict if started, else None.
+        """
+        # Remove busted players from being active in next hand
+        for pid, p in list(self.players.items()):
+            if p.chips <= 0:
+                p.is_active = False
+        if self.is_game_over():
+            return None
+        self.advance_dealer()
+        return self.start_new_hand()
     
     def deal_flop(self):
         """Deal the flop (3 community cards)"""

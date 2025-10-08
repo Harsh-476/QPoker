@@ -41,6 +41,10 @@ class Settings:
 
     # Qiskit
     use_qiskit_simulator: bool = _get_env_bool("QP_USE_QISKIT_SIM", True)
+    
+    # Authentication
+    secret_key: str = os.getenv("QP_SECRET_KEY", "your-secret-key-change-in-production")
+    database_url: str = os.getenv("DATABASE_URL", "sqlite:///qpoker.db")
 
 
 settings = Settings()

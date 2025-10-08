@@ -243,27 +243,39 @@ const GamePage = () => {
     )
   }
 
-  // Waiting room (no game started yet)
-  if (!gameState) {
+  // Check if player is in waiting list
+  const isWaiting = lobby?.waiting_players?.includes(playerId)
+  const isActive = lobby?.players?.includes(playerId)
+
+  // Waiting room (no game started yet or player is waiting)
+  if (!gameState || isWaiting) {
     return (
       <div className="container">
         <div className="text-center mb-8">
           <h1 className="text-large text-white mb-4">🎰 {lobby?.name || lobbyId}</h1>
-          <p className="text-white opacity-90">Waiting for players to join...</p>
+          {isWaiting ? (
+            <div>
+              <p className="text-white opacity-90 mb-2">⏳ You're in the waiting room!</p>
+              <p className="text-white opacity-75 text-sm">The game is in progress. You'll join automatically when the current round ends.</p>
+            </div>
+          ) : (
+            <p className="text-white opacity-90">Waiting for players to join...</p>
+          )}
         </div>
 
+        {/* Active Players */}
         <div className="card mb-8">
-          <h2 className="text-medium mb-4">👥 Players Joined ({lobby?.players?.length || 0})</h2>
-          {lobby?.players && Object.keys(lobby.players).length > 0 ? (
+          <h2 className="text-medium mb-4">🎮 Active Players ({lobby?.players?.length || 0})</h2>
+          {lobby?.player_names && Object.keys(lobby.player_names).length > 0 ? (
             <div className="grid gap-4">
-              {Object.entries(lobby.players).map(([pid, name]) => (
-                <div key={pid} className="flex-center p-3 bg-gray-50 rounded-lg">
-                  <div className="w-10 h-10 bg-blue-500 text-white rounded-full flex-center mr-3 font-bold">
+              {Object.entries(lobby.player_names).map(([pid, name]) => (
+                <div key={pid} className="flex-center p-3 bg-green-50 rounded-lg border border-green-200">
+                  <div className="w-10 h-10 bg-green-500 text-white rounded-full flex-center mr-3 font-bold">
                     {name ? name.charAt(0).toUpperCase() : '?'}
                   </div>
                   <div>
-                    <div className="font-semibold">{name || pid}</div>
-                    <div className="text-small text-gray-500">ID: {pid}</div>
+                    <div className="font-semibold text-green-800">{name || pid}</div>
+                    <div className="text-small text-green-600">Playing</div>
                   </div>
                 </div>
               ))}
@@ -271,10 +283,34 @@ const GamePage = () => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <div className="text-large mb-2">🎲</div>
-              <p>No players yet. Share the link below!</p>
+              <p>No active players yet. Share the link below!</p>
             </div>
           )}
         </div>
+
+        {/* Waiting Players */}
+        {lobby?.waiting_player_names && Object.keys(lobby.waiting_player_names).length > 0 && (
+          <div className="card mb-8">
+            <h2 className="text-medium mb-4">⏳ Waiting Players ({lobby?.waiting_players?.length || 0})</h2>
+            <div className="grid gap-4">
+              {Object.entries(lobby.waiting_player_names).map(([pid, name]) => (
+                <div key={pid} className={`flex-center p-3 rounded-lg border ${pid === playerId ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                  <div className={`w-10 h-10 rounded-full flex-center mr-3 font-bold ${pid === playerId ? 'bg-blue-500 text-white' : 'bg-yellow-500 text-white'}`}>
+                    {name ? name.charAt(0).toUpperCase() : '?'}
+                  </div>
+                  <div>
+                    <div className={`font-semibold ${pid === playerId ? 'text-blue-800' : 'text-yellow-800'}`}>
+                      {name || pid} {pid === playerId && '(You)'}
+                    </div>
+                    <div className={`text-small ${pid === playerId ? 'text-blue-600' : 'text-yellow-600'}`}>
+                      {pid === playerId ? 'Waiting to join' : 'Waiting'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="card mb-8">
           <h2 className="text-medium mb-4">🔗 Invite Other Players</h2>
@@ -298,18 +334,39 @@ const GamePage = () => {
           </div>
         </div>
 
-        <div className="text-center">
-          <button
-            onClick={startGame}
-            disabled={(lobby?.players?.length || 0) < 2}
-            className="btn btn-success"
-          >
-            🚀 Start Game
-          </button>
-          {(lobby?.players?.length || 0) < 2 && (
-            <p className="text-small text-gray-500 mt-2">Need at least 2 players to start</p>
-          )}
-        </div>
+        {/* Only show start button to active players, not waiting players */}
+        {!isWaiting && (
+          <div className="text-center">
+            <button
+              onClick={startGame}
+              disabled={(lobby?.players?.length || 0) < 2}
+              className="btn btn-success"
+            >
+              🚀 Start Game
+            </button>
+            {(lobby?.players?.length || 0) < 2 && (
+              <p className="text-small text-gray-500 mt-2">Need at least 2 players to start</p>
+            )}
+          </div>
+        )}
+        
+        {/* Show waiting message for waiting players */}
+        {isWaiting && (
+          <div className="text-center">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <div className="text-4xl mb-4">⏳</div>
+              <h3 className="text-lg font-semibold text-blue-800 mb-2">Waiting to Join</h3>
+              <p className="text-blue-600 mb-4">
+                The game is currently in progress. You'll be automatically added to the next round when it ends.
+              </p>
+              <div className="flex items-center justify-center space-x-2 text-sm text-blue-500">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span>Waiting for current round to finish...</span>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

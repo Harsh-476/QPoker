@@ -8,6 +8,8 @@ from app.models.player import PlayerCreate
 from app.models.action import ActionRequest
 from app.models.gate import GateApplyRequest
 from app.models.game_state import GameStatePublic
+from app.auth import get_current_active_user
+from app.models.orm import UserORM
 
 
 router = APIRouter()
@@ -32,15 +34,24 @@ def get_lobby(lobby_id: str, lm: LobbyManager = Depends(get_lobby_manager)):
 
 
 @router.post("/lobbies", response_model=LobbyPublic)
-def create_lobby(payload: LobbyCreate, lm: LobbyManager = Depends(get_lobby_manager)):
+def create_lobby(
+    payload: LobbyCreate, 
+    lm: LobbyManager = Depends(get_lobby_manager),
+    current_user: UserORM = Depends(get_current_active_user)
+):
     lobby = lm.create_lobby(payload.name, payload.max_players)
     return lobby.to_public()
 
 
 @router.post("/lobbies/{lobby_id}/join", response_model=LobbyPublic)
-def join_lobby(lobby_id: str, payload: PlayerCreate, lm: LobbyManager = Depends(get_lobby_manager)):
+def join_lobby(
+    lobby_id: str, 
+    payload: PlayerCreate, 
+    lm: LobbyManager = Depends(get_lobby_manager),
+    current_user: UserORM = Depends(get_current_active_user)
+):
     try:
-        return lm.join_lobby(lobby_id, payload.player_id, payload.name)
+        return lm.join_lobby(lobby_id, str(current_user.id), current_user.username)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

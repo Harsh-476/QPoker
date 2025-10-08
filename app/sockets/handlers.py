@@ -73,6 +73,19 @@ def register_socket_handlers(sio: socketio.AsyncServer, get_lobby_manager: calla
                     result = lm.deal_river(lobby_id)
                 elif next_phase == "showdown":
                     result = lm.showdown(lobby_id)
+                elif next_phase == "complete":
+                    # Hand ended via betting reaching showdown-equivalent; try to start next hand
+                    lobby = lm.get_lobby(lobby_id)
+                    if lobby and lobby.engine:
+                        next_info = lobby.engine.start_next_hand_if_possible()
+                        if next_info:
+                            # Promote waiting players before starting next hand
+                            promotion_result = lm.promote_waiting_players(lobby_id)
+                            if promotion_result["promoted_players"]:
+                                print(f"[socket] promoted waiting players: {promotion_result['promoted_players']}")
+                                # Emit lobby update for promoted players
+                                await sio.emit("lobby:update", promotion_result["lobby"], room=lobby_id)
+                            await sio.emit("game:update", {"state": lm.get_game_state(lobby_id), "result": next_info}, room=lobby_id)
             
             await sio.emit("game:update", {"state": lm.get_game_state(lobby_id), "result": result}, room=lobby_id)
         except Exception as e:
